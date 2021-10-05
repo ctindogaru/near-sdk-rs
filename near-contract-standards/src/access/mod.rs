@@ -1,67 +1,109 @@
+//! Based on [`openzeppelin/access`](https://github.com/OpenZeppelin/openzeppelin-contracts/tree/master/contracts/access) files.
+
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::{env, require, AccountId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+pub type RoleId = [u8; 32];
+
+/// Contract module which provides a basic access control mechanism, where
+/// there is an account (an [`Self::owner`]) that can be granted exclusive access to
+/// specific functions.
+///
+/// By default, the owner account will be the [one that deploys](env::predecessor_account_id())
+/// the contract. This can later be changed with [`Self::transfer_ownership()`].
+///
+/// This module makes available the modifier [`Self::only_owner()`], which can be applied to your
+///  functions to restrict their use to the owner.
 #[derive(BorshSerialize, BorshDeserialize)]
 pub struct Ownable {
-    pub owner: AccountId,
-    pub default_owner: AccountId,
+    pub owner: Option<AccountId>,
 }
 
 impl Ownable {
+    /// Initializes the contract setting
+    /// the [`predecessor account`](env::predecessor_account_id())
+    /// as the initial [`Self::owner`].
     pub fn new() -> Self {
-        Self {
-            owner: env::predecessor_account_id(),
-            default_owner: "0000000000".parse::<AccountId>().unwrap(),
-        }
+        Self { owner: Some(env::predecessor_account_id()) }
     }
 
-    pub fn owner(&self) -> AccountId {
+    /// Returns the address of the current [`Self::owner`].  
+    /// Panics if it has no owner.
+    pub fn owner(&self) -> Option<AccountId> {
         self.owner.clone()
     }
 
+    /// Has no effect if called by the owner.
+    /// Panics otherwise.
     pub fn only_owner(&self) {
-        require!(env::predecessor_account_id() == self.owner(), "Ownable: caller is not the owner");
+        require!(
+            Some(env::predecessor_account_id()) == self.owner,
+            "Ownable: caller is not the owner"
+        );
     }
 
-    pub fn renounce_ownership(&mut self) {
+    /// Permanently leaves the contract without an [`Self::owner`].  
+    /// Can only be called by the current owner.
+    ///
+    /// # WARNING
+    ///
+    /// Renouncing ownership will leave the contract without an owner,
+    /// thereby removing any functionality that is only available to the owner.  
+    /// ie. future calls into [`Self::only_owner()`] will always panic.
+    pub fn permanently_renounce_ownership(&mut self) {
         self.only_owner();
-        self.owner = self.default_owner.clone();
+        self.owner = None;
     }
 
+    /// Tranfers [ownership](Self::owner) of the contract to a new account `new_owner`.  
+    /// Can only be called by the current owner.
     pub fn transfer_ownership(&mut self, new_owner: AccountId) {
         self.only_owner();
-        require!(new_owner != self.default_owner, "Ownable: new owner is undefined");
-        self.owner = new_owner;
+        self.owner = Some(new_owner);
     }
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 pub struct RoleData {
+    // TODO: consider using HashSet,
+    // in case the bool as false has no particular use
     pub members: HashMap<AccountId, bool>,
-    pub admin_role: [u8; 32],
+    pub admin_role: RoleId,
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 pub struct AccessControl {
-    pub roles: HashMap<[u8; 32], RoleData>,
-    pub default_admin_role: [u8; 32],
+    pub roles: HashMap<RoleId, RoleData>,
+    /// Default [admin role](RoleData::admin_role) for newly created roles.
+    pub default_admin_role: RoleId,
 }
 
 impl AccessControl {
     pub fn new() -> Self {
-        Self { roles: HashMap::new(), default_admin_role: [0; 32] }
+        Self { roles: HashMap::new(), default_admin_role: RoleId::default() }
     }
 
-    pub fn has_role(&self, role: &[u8; 32], account: &AccountId) -> bool {
-        if !self.roles.contains_key(role) {
-            return false;
-        }
-        *self.roles.get(role).unwrap().members.get(account).unwrap_or(&false)
+    /// Returns `true` if `account` has been granted `role`.  
+    /// Otherwise, and on [missing `role`](Self::roles) or [missing `account`](RoleData::members), returns `false`.
+    pub fn has_role(&self, role: &RoleId, account: &AccountId) -> bool {
+        self.roles
+            .get(role)
+            .and_then(|role_data| role_data.members.get(account).cloned())
+            .unwrap_or(false)
     }
 
-    pub fn check_role(&self, role: &[u8; 32], account: &AccountId) {
+    /// Has no effect if `account` [has been granted](RoleData::members) `role`.  
+    /// Otherwise, and on [missing `role`](Self::roles) or [missing `account`](RoleData::members),
+    /// panics with a standard message.
+    ///
+    /// TODO: check this:  
+    /// The format of the panic message is given by the following regular expression:  
+    /// `/^AccessControl: account (0x[0-9a-f]{40}) is missing role (0x[0-9a-f]{64})$/`
+    ///
+    /// Uses [`Self::has_role()`] internally.
+    pub fn check_role(&self, role: &RoleId, account: &AccountId) {
         if !self.has_role(role, account) {
             env::panic_str(
                 format!("AccessControl: account {} is missing role {:?}", *account, *role).as_str(),
@@ -69,61 +111,169 @@ impl AccessControl {
         }
     }
 
-    pub fn only_role(&self, role: &[u8; 32]) {
+    /// Has no effect if the [`predecessor account`](env::predecessor_account_id())
+    /// has a specific `role`.  
+    /// Otherwise, and on [missing `role`](Self::roles) or [missing `account`](RoleData::members),
+    /// panics with a standard message including the required role.
+    ///
+    /// TODO: check this:  
+    /// The format of the panic message is given by the following regular expression:  
+    /// `/^AccessControl: account (0x[0-9a-f]{40}) is missing role (0x[0-9a-f]{64})$/`
+    ///
+    /// Uses [`Self::check_role()`] internally.
+    pub fn only_role(&self, role: &RoleId) {
         self.check_role(role, &env::predecessor_account_id());
     }
 
-    pub fn get_role_admin(&self, role: &[u8; 32]) -> [u8; 32] {
-        if !self.roles.contains_key(role) {
-            return self.default_admin_role.clone();
-        }
-        self.roles.get(role).unwrap().admin_role.clone()
+    /// Returns the [`admin role`](RoleData::admin_role) that controls `role`.  
+    /// Othewise on [missing `role`](Self::roles), returns [`Self::default_admin_role`].
+    ///
+    /// See also [`Self::grant_role()`] and [`Self::revoke_role()`].  
+    /// See [`Self::set_role_admin()`] to change a role's [admin role](RoleData::admin_role).
+    pub fn get_role_admin(&self, role: &RoleId) -> RoleId {
+        self.roles
+            .get(role)
+            .map(|role_data| role_data.admin_role)
+            .unwrap_or(self.default_admin_role)
     }
 
-    fn grant_role_internal(&mut self, role: [u8; 32], account: AccountId) {
-        if !self.roles.contains_key(&role) {
-            self.roles.insert(
-                role,
-                RoleData { members: HashMap::new(), admin_role: self.default_admin_role.clone() },
-            );
-        }
-        if !self.has_role(&role, &account) {
-            self.roles.get_mut(&role).unwrap().members.insert(account, true);
-        }
-    }
-
-    pub fn grant_role(&mut self, role: [u8; 32], account: AccountId) {
+    /// Grants [`role` to `account`](RoleData::members).
+    ///
+    /// Requirements:
+    ///
+    /// - The [`role`](Self::roles) must exist.
+    /// - The caller must have the `role`'s [admin role](RoleData::admin_role).
+    ///
+    /// Uses [`Self::only_role()`] and then [`Self::internal_setup_role()`] internally.  
+    ///
+    /// See also [`Self::revoke_role()`] for the opposite effect.
+    pub fn grant_role(&mut self, role: RoleId, account: AccountId) {
         self.only_role(&self.get_role_admin(&role));
-        self.grant_role_internal(role, account);
+        self.internal_setup_role(role, account);
     }
 
-    pub fn setup_role(&mut self, role: [u8; 32], account: AccountId) {
-        self.grant_role_internal(role, account);
-    }
+    /// Grants [`role` to `account`](RoleData::members),
+    /// [creating the `role`](Self::roles) if necessary.  
+    /// If `account` was already disabled in `role`, it is simply enabled.
+    ///
+    /// # Warning
+    ///
+    /// This method should only be called from the constructor when setting
+    /// up the initial roles for the system.
+    ///
+    /// Using this function in any other way is effectively circumventing the admin
+    /// system imposed by [`AccessControll`].
+    fn internal_setup_role(&mut self, role: RoleId, account: AccountId) {
+        use std::collections::hash_map::Entry;
+        match self.roles.entry(role) {
+            // `role` did not exist
+            Entry::Vacant(role_entry) => {
+                // creates a new role, while also adding `account` as a member of it.
+                let mut members = HashMap::new();
+                members.insert(account, true);
+                role_entry.insert(RoleData { members, admin_role: self.default_admin_role });
+            }
 
-    pub fn revoke_role(&mut self, role: [u8; 32], account: AccountId) {
-        self.only_role(&self.get_role_admin(&role));
-        if self.has_role(&role, &account) {
-            self.roles.get_mut(&role).unwrap().members.insert(account, false);
+            // `role` already existed
+            Entry::Occupied(mut role_entry) => {
+                match role_entry.get_mut().members.entry(account) {
+                    // `account` had no previous setup
+                    Entry::Vacant(member_entry) => {
+                        member_entry.insert(true);
+                    }
+                    // `account` had a previous setup, but replaces with a `true`.
+                    Entry::Occupied(mut member_entry) => {
+                        *member_entry.get_mut() = true;
+                    }
+                }
+            }
         }
     }
 
-    pub fn renounce_role(&mut self, role: [u8; 32], account: AccountId) {
+    /// Revokes [`role` from `account`](RoleData::members).
+    ///
+    /// Requirements:
+    ///
+    /// - The [`role`](Self::roles) must exist.
+    /// - The caller must have the `role`'s [admin role](RoleData::admin_role).
+    ///
+    /// Uses [`Self::only_role()`] internally.  
+    ///
+    /// See also [`Self::grant_role()`] for the opposite effect.
+    pub fn revoke_role(&mut self, role: RoleId, account: AccountId) {
+        self.only_role(&self.get_role_admin(&role));
+        self.internal_revoke_role(role, account);
+    }
+
+    /// Revokes [`role` from `account`](RoleData::members).
+    ///
+    /// Has no effect if the [`role`](Self::roles) does not exist,
+    /// or if the [`account`](RoleData::members) is not a member for that `role`,
+    /// or if the `account` was already disabled.
+    fn internal_revoke_role(&mut self, role: RoleId, account: AccountId) {
+        use std::collections::hash_map::Entry;
+        match self.roles.entry(role) {
+            // `role` exists
+            Entry::Occupied(mut role_entry) => {
+                match role_entry.get_mut().members.entry(account) {
+                    // `account` is a member, update status
+                    Entry::Occupied(mut member_entry) => {
+                        *member_entry.get_mut() = false;
+                    }
+
+                    // `account` isn't a member, no action needed
+                    Entry::Vacant(_) => {}
+                }
+            }
+
+            // `role` inexistent, no action needed
+            Entry::Vacant(_) => {}
+        }
+    }
+
+    /// Revokes [`role` from](RoleData::members) the [predecessor's `account`](env::predecessor_account_id()).  
+    /// Has no effect if the [`role`](Self::roles) does not exist, or if the [`account`
+    /// is not enabled](RoleData::members) for that `role`.
+    ///
+    /// This method's purpose is to provide a mechanism for `account`s to purposefuly
+    /// [lose their own privileges](RoleData::members), such as when they are compromised
+    /// (eg. when a trusted device is misplaced).
+    ///
+    /// Requirements:
+    ///
+    /// - The `account` must be the [predecessor account](env::predecessor_account_id()).
+    ///
+    /// See also [`Self::grant_role()`] and [`Self::revoke_role()`] for other management of
+    /// roles.
+    pub fn renounce_role(&mut self, role: RoleId, account: AccountId) {
         require!(
             account == env::predecessor_account_id(),
             "AccessControl: can only renounce roles for self"
         );
-        self.revoke_role(role, account);
+        self.internal_revoke_role(role, account);
     }
 
-    pub fn set_role_admin(&mut self, role: [u8; 32], admin_role: [u8; 32]) {
-        if !self.roles.contains_key(&role) {
-            self.roles.insert(
-                role,
-                RoleData { members: HashMap::new(), admin_role: self.default_admin_role.clone() },
-            );
+    /// Sets `admin_role` as `role`'s [admin role](RoleData::admin_role),
+    /// [creating the `role`](Self::roles) if necessary.  
+    ///
+    /// # Warning
+    ///
+    /// There are no further verifications about the caller.
+    fn internal_set_role_admin(&mut self, role: RoleId, admin_role: RoleId) {
+        use std::collections::hash_map::Entry;
+        match self.roles.entry(role) {
+            // `role` does not exist
+            Entry::Vacant(role_entry) => {
+                // creates the role with the correct admin
+                role_entry.insert(RoleData { members: HashMap::new(), admin_role });
+            }
+
+            // role exists
+            Entry::Occupied(mut role_entry) => {
+                // changes the admin of that role
+                role_entry.get_mut().admin_role = admin_role;
+            }
         }
-        self.roles.get_mut(&role).unwrap().admin_role = admin_role;
     }
 }
 
@@ -148,7 +298,7 @@ mod tests {
         let context = get_context(accounts(1));
         testing_env!(context.build());
         let ownable = Ownable::new();
-        assert_eq!(ownable.owner(), accounts(1));
+        assert_eq!(ownable.owner(), Some(accounts(1)));
     }
 
     #[test]
@@ -175,9 +325,9 @@ mod tests {
         let context = get_context(accounts(1));
         testing_env!(context.build());
         let mut ownable = Ownable::new();
-        assert_eq!(ownable.owner(), accounts(1));
-        ownable.renounce_ownership();
-        assert_eq!(ownable.owner(), "0000000000".parse::<AccountId>().unwrap());
+        assert_eq!(ownable.owner(), Some(accounts(1)));
+        ownable.permanently_renounce_ownership();
+        assert_eq!(ownable.owner(), None);
     }
 
     #[test]
@@ -185,9 +335,9 @@ mod tests {
         let context = get_context(accounts(1));
         testing_env!(context.build());
         let mut ownable = Ownable::new();
-        assert_eq!(ownable.owner(), accounts(1));
+        assert_eq!(ownable.owner(), Some(accounts(1)));
         ownable.transfer_ownership(accounts(2));
-        assert_eq!(ownable.owner(), accounts(2));
+        assert_eq!(ownable.owner(), Some(accounts(2)));
     }
 
     #[test]
@@ -235,7 +385,7 @@ mod tests {
         let default_admin_role = [0; 32];
         let role = [1; 32];
         let admin_role = [2; 32];
-        ac.set_role_admin(role, admin_role);
+        ac.internal_set_role_admin(role, admin_role);
         assert_eq!(admin_role, ac.get_role_admin(&role));
         assert_eq!(default_admin_role, ac.get_role_admin(&admin_role));
     }
@@ -247,8 +397,8 @@ mod tests {
         let mut ac = AccessControl::new();
         let role = [1; 32];
         let role_admin = [2; 32];
-        ac.set_role_admin(role, role_admin);
-        ac.setup_role(role_admin, accounts(1));
+        ac.internal_set_role_admin(role, role_admin);
+        ac.internal_setup_role(role_admin, accounts(1));
         ac.grant_role(role, accounts(1));
         assert_eq!(true, ac.has_role(&role, &accounts(1)));
         assert_eq!(true, ac.has_role(&role, &accounts(1)));
@@ -270,8 +420,8 @@ mod tests {
         let mut ac = AccessControl::new();
         let role = [1; 32];
         let role_admin = [2; 32];
-        ac.set_role_admin(role, role_admin);
-        ac.setup_role(role_admin, accounts(1));
+        ac.internal_set_role_admin(role, role_admin);
+        ac.internal_setup_role(role_admin, accounts(1));
         ac.grant_role(role, accounts(1));
         assert_eq!(true, ac.has_role(&role, &accounts(1)));
         ac.renounce_role(role, accounts(1));
