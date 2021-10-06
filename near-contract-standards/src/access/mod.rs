@@ -86,7 +86,8 @@ impl AccessControl {
     }
 
     /// Returns `true` if `account` has been granted `role`.  
-    /// Otherwise, and on [missing `role`](Self::roles) or [missing `account`](RoleData::members), returns `false`.
+    /// Otherwise, and on [missing `role`](Self::roles),
+    /// returns `false`.
     pub fn has_role(&self, role: &RoleId, account: &AccountId) -> bool {
         self.roles //
             .get(role)
@@ -95,7 +96,7 @@ impl AccessControl {
     }
 
     /// Has no effect if `account` [has been granted](RoleData::members) `role`.  
-    /// Otherwise, and on [missing `role`](Self::roles) or [missing `account`](RoleData::members),
+    /// Otherwise, and on [missing `role`](Self::roles),
     /// panics with a standard message.
     ///
     /// TODO: check this:  
@@ -113,7 +114,7 @@ impl AccessControl {
 
     /// Has no effect if the [`predecessor account`](env::predecessor_account_id())
     /// has a specific `role`.  
-    /// Otherwise, and on [missing `role`](Self::roles) or [missing `account`](RoleData::members),
+    /// Otherwise, and on [missing `role`](Self::roles),
     /// panics with a standard message including the required role.
     ///
     /// TODO: check this:  
