@@ -1,8 +1,8 @@
 //! Based on [`openzeppelin/access`](https://github.com/OpenZeppelin/openzeppelin-contracts/tree/master/contracts/access) files.
 
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
+use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{env, require, AccountId};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 pub type RoleId = [u8; 32];
@@ -66,6 +66,7 @@ impl Ownable {
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[serde(crate = "near_sdk::serde")]
 pub struct RoleData {
     // TODO: consider using HashSet,
     // in case the bool as false has no particular use
@@ -74,6 +75,7 @@ pub struct RoleData {
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[serde(crate = "near_sdk::serde")]
 pub struct AccessControl {
     pub roles: HashMap<RoleId, RoleData>,
     /// Default [admin role](RoleData::admin_role) for newly created roles.
