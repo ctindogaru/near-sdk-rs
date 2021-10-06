@@ -152,6 +152,9 @@ impl AccessControl {
         self.internal_setup_role(role, account);
     }
 
+    // TODO: consider making it not public, and have a constructor
+    // that would forward some calls into this internal method
+
     /// Grants [`role` to `account`](RoleData::members),
     /// [creating the `role`](Self::roles) if necessary.  
     ///
@@ -162,7 +165,7 @@ impl AccessControl {
     ///
     /// Using this function in any other way is effectively circumventing the admin
     /// system imposed by [`AccessControll`].
-    fn internal_setup_role(&mut self, role: RoleId, account: AccountId) {
+    pub fn internal_setup_role(&mut self, role: RoleId, account: AccountId) {
         use std::collections::hash_map::Entry;
         match self.roles.entry(role) {
             // `role` did not exist
