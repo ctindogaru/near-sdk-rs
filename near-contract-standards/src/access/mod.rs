@@ -3,7 +3,7 @@
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{env, require, AccountId};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub type RoleId = [u8; 32];
 
@@ -68,9 +68,7 @@ impl Ownable {
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[serde(crate = "near_sdk::serde")]
 pub struct RoleData {
-    // TODO: consider using HashSet,
-    // in case the bool as false has no particular use
-    pub members: HashMap<AccountId, bool>,
+    pub members: HashSet<AccountId>,
     pub admin_role: RoleId,
 }
 
@@ -90,9 +88,9 @@ impl AccessControl {
     /// Returns `true` if `account` has been granted `role`.  
     /// Otherwise, and on [missing `role`](Self::roles) or [missing `account`](RoleData::members), returns `false`.
     pub fn has_role(&self, role: &RoleId, account: &AccountId) -> bool {
-        self.roles
+        self.roles //
             .get(role)
-            .and_then(|role_data| role_data.members.get(account).cloned())
+            .map(|role_data| role_data.members.contains(account))
             .unwrap_or(false)
     }
 
@@ -156,7 +154,6 @@ impl AccessControl {
 
     /// Grants [`role` to `account`](RoleData::members),
     /// [creating the `role`](Self::roles) if necessary.  
-    /// If `account` was already disabled in `role`, it is simply enabled.
     ///
     /// # Warning
     ///
@@ -171,23 +168,14 @@ impl AccessControl {
             // `role` did not exist
             Entry::Vacant(role_entry) => {
                 // creates a new role, while also adding `account` as a member of it.
-                let mut members = HashMap::new();
-                members.insert(account, true);
+                let mut members = HashSet::new();
+                members.insert(account);
                 role_entry.insert(RoleData { members, admin_role: self.default_admin_role });
             }
 
             // `role` already existed
             Entry::Occupied(mut role_entry) => {
-                match role_entry.get_mut().members.entry(account) {
-                    // `account` had no previous setup
-                    Entry::Vacant(member_entry) => {
-                        member_entry.insert(true);
-                    }
-                    // `account` had a previous setup, but replaces with a `true`.
-                    Entry::Occupied(mut member_entry) => {
-                        *member_entry.get_mut() = true;
-                    }
-                }
+                let _already_had_role = role_entry.get_mut().members.insert(account);
             }
         }
     }
@@ -210,22 +198,13 @@ impl AccessControl {
     /// Revokes [`role` from `account`](RoleData::members).
     ///
     /// Has no effect if the [`role`](Self::roles) does not exist,
-    /// or if the [`account`](RoleData::members) is not a member for that `role`,
-    /// or if the `account` was already disabled.
+    /// or if the [`account`](RoleData::members) is not a member for that `role`.
     fn internal_revoke_role(&mut self, role: RoleId, account: AccountId) {
         use std::collections::hash_map::Entry;
         match self.roles.entry(role) {
             // `role` exists
             Entry::Occupied(mut role_entry) => {
-                match role_entry.get_mut().members.entry(account) {
-                    // `account` is a member, update status
-                    Entry::Occupied(mut member_entry) => {
-                        *member_entry.get_mut() = false;
-                    }
-
-                    // `account` isn't a member, no action needed
-                    Entry::Vacant(_) => {}
-                }
+                let _had_role = role_entry.get_mut().members.remove(&account);
             }
 
             // `role` inexistent, no action needed
@@ -267,7 +246,7 @@ impl AccessControl {
             // `role` does not exist
             Entry::Vacant(role_entry) => {
                 // creates the role with the correct admin
-                role_entry.insert(RoleData { members: HashMap::new(), admin_role });
+                role_entry.insert(RoleData { members: HashSet::new(), admin_role });
             }
 
             // role exists
@@ -311,6 +290,7 @@ mod tests {
         ownable.only_owner();
     }
 
+    // TODO: test failing with (signal: 4, SIGILL: illegal instruction)
     #[test]
     #[should_panic(expected = "Ownable: caller is not the owner")]
     fn test_only_owner_fail() {
@@ -357,6 +337,7 @@ mod tests {
         assert_eq!(false, ac.has_role(&[1; 32], &accounts(2)));
     }
 
+    // TODO: test failing with (signal: 4, SIGILL: illegal instruction)
     #[test]
     #[should_panic(
         expected = "AccessControl: account charlie is missing role [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]"
@@ -368,6 +349,7 @@ mod tests {
         ac.check_role(&[1; 32], &accounts(2));
     }
 
+    // TODO: test failed with (signal: 4, SIGILL: illegal instruction)
     #[test]
     #[should_panic(
         expected = "AccessControl: account bob is missing role [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]"
@@ -406,6 +388,7 @@ mod tests {
         assert_eq!(true, ac.has_role(&role, &accounts(1)));
     }
 
+    // TODO: test failing with (signal: 4, SIGILL: illegal instruction)
     #[test]
     #[should_panic(expected = "AccessControl: can only renounce roles for self")]
     fn test_renounce_role_fail() {
