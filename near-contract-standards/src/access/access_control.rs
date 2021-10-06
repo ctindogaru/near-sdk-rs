@@ -221,14 +221,14 @@ mod tests {
     }
 
     #[test]
-    fn test_ac_new() {
+    fn test_new() {
         let context = get_context(accounts(1));
         testing_env!(context.build());
         AccessControl::new();
     }
 
     #[test]
-    fn test_ac_has_role() {
+    fn test_has_role() {
         let context = get_context(accounts(1));
         testing_env!(context.build());
         let ac = AccessControl::new();
@@ -240,7 +240,7 @@ mod tests {
     #[should_panic(
         expected = "AccessControl: account charlie is missing role [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]"
     )]
-    fn test_ac_check_role() {
+    fn test_check_role() {
         let context = get_context(accounts(1));
         testing_env!(context.build());
         let ac = AccessControl::new();
@@ -252,7 +252,7 @@ mod tests {
     #[should_panic(
         expected = "AccessControl: account bob is missing role [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]"
     )]
-    fn test_ac_only_role() {
+    fn test_only_role() {
         let context = get_context(accounts(1));
         testing_env!(context.build());
         let ac = AccessControl::new();
@@ -260,7 +260,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ac_set_and_get_role_admin() {
+    fn test_set_and_get_role_admin() {
         let context = get_context(accounts(1));
         testing_env!(context.build());
         let mut ac = AccessControl::new();
