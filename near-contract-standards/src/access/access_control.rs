@@ -109,21 +109,12 @@ impl AccessControl {
     /// Using this function in any other way is effectively circumventing the admin
     /// system imposed by [`AccessControll`].
     pub fn internal_setup_role(&mut self, role: RoleId, account: AccountId) {
-        use std::collections::hash_map::Entry;
-        match self.roles.entry(role) {
-            // `role` did not exist
-            Entry::Vacant(role_entry) => {
-                // creates a new role, while also adding `account` as a member of it.
-                let mut members = HashSet::new();
-                members.insert(account);
-                role_entry.insert(RoleData { members, admin_role: self.default_admin_role });
-            }
-
-            // `role` already existed
-            Entry::Occupied(mut role_entry) => {
-                let _already_had_role = role_entry.get_mut().members.insert(account);
-            }
-        }
+        let admin_role = self.default_admin_role;
+        let role = self
+            .roles
+            .entry(role)
+            .or_insert_with(|| RoleData { members: HashSet::new(), admin_role });
+        role.members.insert(account);
     }
 
     /// Revokes [`role` from `account`](RoleData::members).
@@ -146,16 +137,11 @@ impl AccessControl {
     /// Has no effect if the [`role`](Self::roles) does not exist,
     /// or if the [`account`](RoleData::members) is not a member for that `role`.
     fn internal_revoke_role(&mut self, role: RoleId, account: AccountId) {
-        use std::collections::hash_map::Entry;
-        match self.roles.entry(role) {
-            // `role` exists
-            Entry::Occupied(mut role_entry) => {
-                let _had_role = role_entry.get_mut().members.remove(&account);
-            }
-
-            // `role` inexistent, no action needed
-            Entry::Vacant(_) => {}
-        }
+        self.roles //
+            .entry(role)
+            .and_modify(|role| {
+                role.members.remove(&account);
+            });
     }
 
     /// Revokes [`role` from](RoleData::members) the [predecessor's `account`](env::predecessor_account_id()).  
@@ -187,20 +173,11 @@ impl AccessControl {
     ///
     /// There are no further verifications about the caller.
     fn internal_set_role_admin(&mut self, role: RoleId, admin_role: RoleId) {
-        use std::collections::hash_map::Entry;
-        match self.roles.entry(role) {
-            // `role` does not exist
-            Entry::Vacant(role_entry) => {
-                // creates the role with the correct admin
-                role_entry.insert(RoleData { members: HashSet::new(), admin_role });
-            }
-
-            // role exists
-            Entry::Occupied(mut role_entry) => {
-                // changes the admin of that role
-                role_entry.get_mut().admin_role = admin_role;
-            }
-        }
+        let role = self
+            .roles
+            .entry(role)
+            .or_insert_with(|| RoleData { members: HashSet::new(), admin_role });
+        role.admin_role = admin_role;
     }
 }
 
