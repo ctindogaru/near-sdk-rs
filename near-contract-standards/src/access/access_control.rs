@@ -72,7 +72,7 @@ impl AccessControl {
     /// Othewise on [missing `role`](Self::roles), returns [`Self::default_admin_role`].
     ///
     /// See also [`Self::grant_role()`] and [`Self::revoke_role()`].  
-    /// See [`Self::set_role_admin()`] to change a role's [admin role](RoleData::admin_role).
+    /// See [`Self::internal_set_role_admin()`] to change a role's [admin role](RoleData::admin_role).
     pub fn get_role_admin(&self, role: &RoleId) -> RoleId {
         self.roles
             .get(role)
